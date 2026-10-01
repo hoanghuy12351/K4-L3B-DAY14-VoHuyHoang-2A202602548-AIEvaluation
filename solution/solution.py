@@ -376,8 +376,12 @@ def rerank_by_overlap(contexts: list[str], query: str) -> list[str]:
     Gợi ý: sorted(contexts, key=lambda c: len(_tokenize(c) & _tokenize(query)),
                   reverse=True)
     """
-    # TODO (Bài tập thưởng — Bài 3.5): triển khai bộ xếp hạng lại
-    raise NotImplementedError("Implement rerank_by_overlap")
+    query_tokens = _tokenize(query)
+    return sorted(
+        contexts,
+        key=lambda context: len(_tokenize(context).intersection(query_tokens)),
+        reverse=True,
+    )
 
 
 # ---------------------------------------------------------------------------

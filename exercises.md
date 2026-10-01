@@ -294,19 +294,31 @@ verbosity bias và self-preference bằng cách nào?
 Chỉ làm sau khi hoàn thành 3.1–3.3. Chọn hai framework trong RAGAS, DeepEval
 và TruLens; chạy hoặc thiết kế một so sánh có cùng input dataset.
 
-| Tiêu chí                  | Framework 1: \_\_\_\_ | Framework 2: \_\_\_\_ |
-| ------------------------- | --------------------- | --------------------- |
-| Setup complexity          |                       |                       |
-| Metrics available         |                       |                       |
-| CI/CD integration         |                       |                       |
-| Kết quả trên cùng dataset |                       |                       |
-| Insight rút ra            |                       |                       |
+| Tiêu chí                  | Framework 1: RAGAS | Framework 2: DeepEval |
+| ------------------------- | ------------------ | --------------------- |
+| Setup complexity          | Cài `ragas`, cấu hình evaluator LLM và embedding; chuyển mỗi record thành `SingleTurnSample(user_input, response, reference, retrieved_contexts)`. | Cài `deepeval`, cấu hình judge model hoặc custom LLM; chuyển mỗi record thành `LLMTestCase(input, actual_output, expected_output, retrieval_context)`. |
+| Metrics available         | Context Precision, Context Recall, Faithfulness, Response Relevancy; có thêm Factual Correctness, Aspect Critic và custom rubric. | Contextual Precision, Contextual Recall, Contextual Relevancy, Faithfulness, Answer Relevancy; có thêm các safety metrics như PII Leakage, Misuse và Non-Advice. |
+| CI/CD integration         | Chạy evaluation script hoặc CLI trong CI, lưu experiment result và tự áp quality threshold. | Chạy bằng `evaluate()` hoặc `deepeval test run`; hỗ trợ test report, caching và tích hợp workflow kiểm thử. |
+| Kết quả trên cùng dataset | Thiết kế chạy đủ 20 traces với cùng judge model, temperature, threshold và bốn metric tương ứng; xuất aggregate scores cùng failure IDs. Chưa ghi score vì repo chưa cài/chạy RAGAS thật. | Dùng đúng 20 traces và cấu hình judge giống RAGAS; xuất cùng aggregate scores, reason và failure IDs. Chưa ghi score vì repo chưa cài/chạy DeepEval thật. |
+| Insight rút ra            | Phù hợp khi trọng tâm là benchmark RAG chuẩn và phân tích riêng retrieval/generation trên dataset. | Phù hợp khi cần giải thích từng verdict, kiểm thử CI và bổ sung safety/privacy metrics cho domain customer support. |
+
+**Protocol so sánh công bằng**
+
+1. Dùng cố định 20 records từ `golden_dataset.json` và `artifacts/actual_answers.json`.
+2. Map bốn metric tương ứng: Faithfulness, Answer/Response Relevancy, Context Precision và Context Recall.
+3. Giữ nguyên judge model, temperature, prompt language, threshold và số lần lặp; cache cùng input để tránh một framework được lợi do cấu hình khác.
+4. So sánh mean score, Spearman rank correlation, pass/fail agreement và Jaccard overlap của failure IDs.
+5. Human-review H01, H02, A01 và A02 vì đây là các case mà lexical metric hiện tại có false positive hoặc false negative.
+
+Nguồn thiết kế: [RAGAS available metrics](https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/), [RAGAS Context Precision](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/context_precision/), [DeepEval RAG metrics](https://deepeval.com/docs/getting-started-rag), [DeepEval metrics overview](https://deepeval.com/docs/metrics-introduction).
 
 - Scores có nhất quán không?
 - Framework nào strict hơn và vì sao?
 - Hai framework có tìm ra cùng failure cases không?
 
 > _Phân tích:_
+
+- Chưa thể kết luận hai framework cho score nhất quán hoặc framework nào strict hơn khi chưa chạy evaluator thật; khẳng định trước sẽ là bịa kết quả. Sau khi chạy, dùng rank correlation và pass/fail agreement thay vì chỉ so sánh mean score. Hai framework có thể cùng phát hiện lỗi groundedness/retrieval, nhưng không nhất thiết tìm đúng cùng failures vì prompt và cách tách claim khác nhau. Với A02, safety metric chuyên biệt của DeepEval có khả năng hữu ích hơn bốn RAG metrics cơ bản; với H01, cả hai vẫn phải được calibrate bằng human label để chắc chắn phát hiện lỗi policy-date.
 
 ### Exercise 3.5 — Retrieval Reranking (Bonus +5)
 
@@ -321,20 +333,26 @@ thay đổi Context Recall hay không.
 
 | ID      | Recall before | Recall after | Precision before | Precision after | Delta Precision |
 | ------- | ------------: | -----------: | ---------------: | --------------: | --------------: |
-|         |               |              |                  |                 |                 |
-|         |               |              |                  |                 |                 |
-|         |               |              |                  |                 |                 |
-|         |               |              |                  |                 |                 |
-|         |               |              |                  |                 |                 |
-| **Avg** |               |              |                  |                 |                 |
+| H03     |         0.867 |        0.867 |            0.888 |           1.000 |          +0.113 |
+| M07     |         0.935 |        0.935 |            0.750 |           0.833 |          +0.083 |
+| H02     |         0.844 |        0.844 |            0.888 |           0.950 |          +0.063 |
+| E02     |         0.778 |        0.778 |            0.950 |           1.000 |          +0.050 |
+| E03     |         0.833 |        0.833 |            0.950 |           1.000 |          +0.050 |
+| **Avg** |     **0.851** |    **0.851** |        **0.885** |       **0.957** |      **+0.072** |
+
+Trên toàn bộ 20 traces, Context Precision tăng ở 6 cases, giữ nguyên ở 14 cases và không giảm ở case nào. Context Recall không đổi ở cả 20 cases.
 
 **Tại sao Recall dự kiến không đổi?**
 
 > _Câu trả lời:_
 
+- Reranking chỉ thay đổi thứ tự của cùng một tập chunks, không thêm hoặc xóa chunk. Context Recall được tính trên hợp token của toàn bộ retrieved chunks nên union coverage không đổi khi hoán vị thứ tự.
+
 **Khi nào reranking không đủ và cần sửa retriever/query/chunking?**
 
 > _Câu trả lời:_
+
+- Reranking không đủ khi evidence đúng hoàn toàn không có trong top-k, query và evidence dùng từ đồng nghĩa ít lexical overlap, corpus chứa sai policy version, hoặc chunking cắt mất điều kiện quan trọng. Khi đó cần sửa query expansion/intent routing, metadata filter, embedding retriever, top-k hoặc chunk boundaries; reranker không thể tạo ra evidence mà retriever chưa lấy được.
 
 ---
 
@@ -355,4 +373,4 @@ Hoàn thành kiểm tra cuối trong khoảng 11:50–12:00.
 - [x] Exercise 3.3 có rubric 1–5 và bias controls.
 - [x] `reflection.md` có ba failure analyses và regression strategy.
 - [x] Đã copy `template.py` thành `solution/solution.py`.
-- [x] Exercise 3.4 và 3.5 không thực hiện vì là phần bonus không bắt buộc.
+- [x] Exercise 3.4 và 3.5 đã hoàn thành để lấy điểm bonus.
